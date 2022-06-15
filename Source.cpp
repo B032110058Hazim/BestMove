@@ -138,6 +138,8 @@ ActorSprite::ActorSprite(std::string fp, int x, int y, int w, int h) {
 class Cursor : public ActorSprite {
     ~Cursor();
 public:
+    sf::FloatRect cursorHitbox;
+
     Cursor();
     void execute() override;
 };
@@ -148,21 +150,23 @@ Cursor::Cursor() : ActorSprite("./Assets/GUI/Pick.png") {
 Cursor::~Cursor() {}
 
 void Cursor::execute() {
+    cursorHitbox = sprite.getGlobalBounds();
     sprite.setPosition(engine.getMousePosition());
-
     ActorSprite::draw();
 }
 
 class Board : public ActorSprite {
+    Cursor& cursor;
     int selection[2];
     ~Board();
 public:
-    Board();
-    void addSelection(sf::Vector2f p);
+    Board(Cursor& c);
+    void addSelection();
     void execute() override;
 };
 
-Board::Board() : ActorSprite("./Assets/Sprites/Board.png"),
+Board::Board(Cursor& c) : ActorSprite("./Assets/Sprites/Board.png"),
+cursor(c),
 selection{ 0, 0 } {
     sprite.setPosition(engine.window.getSize().x / 2 - sprite.getLocalBounds().width / 2,
         engine.window.getSize().y / 2 - sprite.getLocalBounds().height / 2);
@@ -170,12 +174,29 @@ selection{ 0, 0 } {
 
 Board::~Board() {}
 
-void Board::addSelection(sf::Vector2f p) {
-    printf("%f, %f\n", p.x, p.y);
+void Board::addSelection() {
+    sf::FloatRect intersection;
+
+    sprite.getGlobalBounds().intersects(cursor.cursorHitbox, intersection);
+
+    for (int i = 0; i < 8; i++) {
+        if ((i + 1) * 128 > intersection.left)
+            break;
+        selection[0] = i;
+    }
+
+    for (int i = 0; i < 8; i++) {
+        if ((i + 1) * 128 > intersection.top)
+            break;
+        selection[1] = i;
+    }
+
+    printf("%f, %f\n", intersection.left, intersection.top);
 }
 
 void Board::execute() {
-
+    if (engine.event.type == sf::Event::MouseButtonReleased && sprite.getGlobalBounds().contains(engine.getMousePosition()))
+        addSelection();
     ActorSprite::draw();
 }
 
@@ -185,8 +206,8 @@ int main()
 {
     std::vector<Actor*> actors;
 
-    Board* as = new Board();
     Cursor* c = new Cursor();
+    Board* as = new Board(*c);
     //Board* b = new Board("./Assets/Sprites/Pieces.png", 3 * 128, 0, 128, 128);
     actors.push_back(as);
     actors.push_back(c);
