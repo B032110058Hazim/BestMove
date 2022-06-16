@@ -1,6 +1,8 @@
 #include <vector>
 #include <SFML/Graphics.hpp>
 
+#define GAMELENGTH 10.f
+
 namespace Utilities {
     sf::Vector2f linearInterpolate(sf::Vector2f a, sf::Vector2f b, float t) {
         return sf::Vector2f(a + sf::Vector2f(t * (b - a).x, t * (b - a).y));
@@ -57,8 +59,7 @@ public:
 
 Engine::Engine():
     video(1920, 1080),
-    window(this->video, "Game"),
-    //window(this->video, "Game", sf::Style::Fullscreen),
+    window(this->video, "Game", sf::Style::Fullscreen),
     view(sf::FloatRect(0, 0, 1920, 1080)),
     deltaTime(0.f)
 {
@@ -218,57 +219,9 @@ bool Cursor::pass() {
     return false;
 }
 
-class Piece : public ActorSprite {
-    ~Piece();
-public:
-    enum PIECE{
-        WhitePawn,
-        WhiteKnight,
-        WhiteBishop,
-        WhiteRook,
-        WhiteQueen,
-        WhiteKing,
-        BlackPawn,
-        BlackKnight,
-        BlackBishop,
-        BlackRook,
-        BlackQueen,
-        BlackKing
-    };
-
-    sf::IntRect pieceRect(int i);
-    Piece(int i);
-    void execute() override;
-    virtual bool pass() override;
-};
-
-sf::IntRect Piece::pieceRect(int i) {
-    const int TILESIZE = 128;
-    int x = 0, y = 0;
-
-    x = i;
-
-    if (i > 5) {
-        x =- 5;
-        y = TILESIZE;
-    }
-
-    return sf::IntRect(x, y, TILESIZE, TILESIZE);
-}
-
-Piece::Piece(int i) : ActorSprite("./Assets/Sprites/Pieces.png", pieceRect(i)) {}
-
-Piece::~Piece() {}
-
-void Piece::execute() {
-    ActorSprite::draw();
-}
-
-bool Piece::pass() {
-    return true;
-}
-
 class Board : public ActorSprite {
+    friend class Piece;
+
     int selection[2];
     ~Board();
 public:
@@ -293,7 +246,7 @@ void Board::addSelection() {
         index = 0;
 
     for (int i = 1; i < 8; i++) {
-        if ((i) * 128  + engine.window.getSize().x / 2 - sprite.getLocalBounds().width / 2 > engine.getMousePosition().x)
+        if ((i) * 128 + engine.window.getSize().x / 2 - sprite.getLocalBounds().width / 2 > engine.getMousePosition().x)
             break;
         selection[index] = i * 100;
     }
@@ -319,7 +272,7 @@ void Board::execute() {
     }
     else
         timer += engine.deltaTime;
-    
+
     ActorSprite::draw();
 }
 
@@ -327,15 +280,87 @@ bool Board::pass() {
     return true;
 }
 
-int arr[64] = {
-    -4, -2, -3, -5, -6, -3, -2, -4,
-    -1, -1, -1, -1, -1, -1, -1, -1,
-     0,  0,  0,  0,  0,  0,  0,  0,
-     0,  0,  0,  0,  0,  0,  0,  0,
-     0,  0,  0,  0,  0,  0,  0,  0,
-     0,  0,  0,  0,  0,  0,  0,  0,
-     1,  1,  1,  1,  1,  1,  1,  1,
-     4,  2,  3,  5,  6,  3,  2,  4
+class Piece : public ActorSprite {
+    ~Piece();
+public:
+    enum PIECE{
+        WhitePawn,
+        WhiteKnight,
+        WhiteBishop,
+        WhiteRook,
+        WhiteQueen,
+        WhiteKing,
+        BlackPawn,
+        BlackKnight,
+        BlackBishop,
+        BlackRook,
+        BlackQueen,
+        BlackKing
+    };
+    Board& board;
+
+    sf::IntRect pieceRect(int i);
+    Piece(Board& b, int i, int x, int y);
+    void execute() override;
+    virtual bool pass() override;
+};
+
+sf::IntRect Piece::pieceRect(int i) {
+    const int TILESIZE = 128;
+    int x = 0, y = 0;
+
+    x = i;
+
+    if (i > 5) {
+        x -= 6;
+        y = TILESIZE;
+    }
+
+    return sf::IntRect(x * TILESIZE, y, TILESIZE, TILESIZE);
+}
+
+
+Piece::Piece(Board& b, int i, int x, int y) : ActorSprite("./Assets/Sprites/Pieces.png", pieceRect(i)),
+    board(b) {
+    const int TILESIZE = 128;
+
+    sprite.setPosition(sf::Vector2f((x - 1) * TILESIZE, (y - 1) * TILESIZE) + board.sprite.getPosition());
+}
+
+Piece::~Piece() {}
+
+void Piece::execute() {
+    ActorSprite::draw();
+}
+
+bool Piece::pass() {
+    return true;
+}
+
+class Background : public ActorSprite {
+    ~Background();
+public:
+    Background();
+    void execute() override;
+    virtual bool pass() override;
+};
+
+Background::Background() : ActorSprite("./Assets/Background/Background.jpg") {}
+
+Background::~Background() {}
+
+void Background::execute() {
+    ActorSprite::draw();
+}
+
+bool Background::pass() {
+    return false;
+}
+
+Actor* [] = {
+    new Background(),
+    new Board(),
+    new Cursor()
 };
 
 class Game {
@@ -343,13 +368,16 @@ class Game {
     std::vector<Actor*> actors;
 
     int kept;
-    int timer;
+    float timer;
     bool countdown;
+    sf::RectangleShape bar;
 
 public:
     Game();
     ~Game();
     
+    void loadPieces(Board* b, int arr[64]);
+    void insertActors(Actor* a[]);
     void clearActors();
     void play();
 };
@@ -357,21 +385,23 @@ public:
 Game::Game():
     engine(Engine::instance()),
     kept(0),
-    timer(100),
-    countdown(false) {
-
-    Cursor* c = new Cursor();
-    Board* as = new Board();
-    Piece* b = new Piece(Piece::PIECE::WhitePawn);
-    
-    actors.insert(actors.end() - kept, as);
-    actors.insert(actors.end() - kept, b);
-    actors.insert(actors.end() - kept, c);
-
+    timer(GAMELENGTH),
+    countdown(false),
+    bar(sf::Vector2f(1920, 24)) {
+    insertActors(arr);
+    bar.setFillColor(sf::Color::Red);
+    bar.setPosition(0, 1050);
 }
 
 Game::~Game() {
     actors.clear();
+}
+
+void Game::insertActors(Actor* a[]) {
+    int size = sizeof(a) / sizeof(a[0]);
+
+    for (int i = 0; i <= size; i++)
+        actors.insert(actors.end() - kept, a[i]);;
 }
 
 void Game::clearActors() {
@@ -388,16 +418,12 @@ void Game::clearActors() {
 }
 
 void Game::play() {
-
     while (Engine::instance().window.isOpen()) {
         sf::Event& event = Engine::instance().next();
 
-        if(countdown)
-            timer -= engine.deltaTime;
-
         if (timer <= 0) {
+            timer = GAMELENGTH;
             clearActors();
-            timer = 100;
         }
 
         kept = 0;
@@ -414,6 +440,12 @@ void Game::play() {
         for (Actor* a : actors)
             a->execute();
 
+        if (countdown) {
+            timer -= engine.deltaTime;
+            Engine::instance().window.draw(bar);
+        }
+
+        bar.setScale(sf::Vector2f((float)(timer / GAMELENGTH), 1.f));
         Engine::instance().window.display();
     }
 }
@@ -424,14 +456,34 @@ int main()
     g.play();
 }
 
+/*
+
+int arr[64] = {
+     10, 8,  9, 11, 12,  9,  8, 10,
+     7,  7,  7,  7,  7,  7,  7,  7,
+     0,  0,  0,  0,  0,  0,  0,  0,
+     0,  0,  0,  0,  0,  0,  0,  0,
+     0,  0,  0,  0,  0,  0,  0,  0,
+     0,  0,  0,  0,  0,  0,  0,  0,
+     1,  1,  1,  1,  1,  1,  1,  1,
+     4,  2,  3,  5,  6,  3,  2,  4
+};
 
 
-//kept = 0;
-//
-//for (Actor* a : actors) {
-//  if (a->pass()) {
-//      actors.erase(actors.begin() + kept);
-//      kept--;
-//  }
-//kept++;
-//printf("%i", kept);
+void Game::loadPieces(Board* b, int arr[64]) {
+    int y = 1, x = 1;
+
+    for (int i = 0; i < 64; i++) {
+        if (x == 8) {
+            y++;
+            x = 1;
+        }
+
+        if (arr[i] != 0) {
+            Piece* p = new Piece(*b, arr[i], x, y);
+            actors.insert(actors.end() - kept, p);
+        }
+
+        x++;
+    }
+}*/
