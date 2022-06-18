@@ -1,7 +1,11 @@
 #include <vector>
+#include <string>
 #include <SFML/Graphics.hpp>
+#include <SFML/Audio.hpp>
 
-#define GAMELENGTH 10.f
+#define GAMELENGTH 30.f
+
+int score = 0;
 
 namespace Utilities {
     sf::Vector2f linearInterpolate(sf::Vector2f a, sf::Vector2f b, float t) {
@@ -53,13 +57,14 @@ public:
     static Engine& instance();
     void render(sf::Sprite& sprite);
     void render(sf::Text& text);
+    void render(sf::Vertex* v, int l);
     sf::Event& next();
     sf::Vector2f getMousePosition();
 };
 
 Engine::Engine():
     video(1920, 1080),
-    window(this->video, "Game", sf::Style::Fullscreen),
+    window(this->video, "Best Move"),
     view(sf::FloatRect(0, 0, 1920, 1080)),
     deltaTime(0.f)
 {
@@ -188,18 +193,103 @@ ActorText::ActorText(std::string fp, std::string s) {
         text.setFont(font);
     }
 
-    text.setString("Hello world");
+    text.setString(s);
 }
 
 bool ActorText::pass() {
+    return false;
+}
+
+class Score : public ActorText {
+    ~Score();
+public:
+
+    Score();
+    void execute() override;
+    virtual bool pass() override;
+};
+
+Score::Score() : ActorText("./Assets/Fonts/FredokaOne-Regular.ttf", std::to_string(score)) {
+    text.setCharacterSize(64);
+}
+
+Score::~Score() {};
+
+void Score::execute() {
+    text.setString(std::to_string(score));
+    
+    ActorText::draw();
+}
+
+bool Score::pass() {
+    return false;
+}
+
+class Title : public ActorSprite {
+    ~Title();
+
+public:
+    int value = 0;
+
+    Title();
+    void execute() override;
+    virtual bool pass() override;
+};
+
+Title::Title() : ActorSprite("./Assets/GUI/Title.png") {
+    sprite.setPosition(engine.window.getSize().x / 2 - sprite.getLocalBounds().width / 2,
+        engine.window.getSize().y / 2 - sprite.getLocalBounds().height / 2 - 333);
+}
+
+Title::~Title() {}
+
+void Title::execute() {
+    ActorSprite::draw();
+}
+
+bool Title::pass() {
     return true;
 }
+
+class PlayButton : public ActorSprite {
+    ~PlayButton();
+
+public:
+    int value = 0;
+
+    PlayButton();
+    void execute() override;
+    virtual bool pass() override;
+};
+
+PlayButton::PlayButton() : ActorSprite("./Assets/GUI/Play.png") {
+    sprite.setPosition(engine.window.getSize().x / 2 - sprite.getLocalBounds().width / 2,
+        engine.window.getSize().y / 2 - sprite.getLocalBounds().height / 2);
+}
+
+PlayButton::~PlayButton() {}
+
+void PlayButton::execute() {
+    static float timer = 0.3f;
+
+    if (timer > 0.3f && engine.event.type == sf::Event::MouseButtonPressed && sprite.getGlobalBounds().contains(engine.getMousePosition())) {
+        value = 1;
+        timer = 0.3;
+    }
+    else
+        timer += engine.deltaTime;
+
+    ActorSprite::draw();
+}
+
+bool PlayButton::pass() {
+    return true;
+}
+
 
 class Cursor : public ActorSprite {
     ~Cursor();
 public:
-    sf::FloatRect cursorHitbox;
-
     Cursor();
     void execute() override;
     virtual bool pass() override;
@@ -222,9 +312,11 @@ bool Cursor::pass() {
 class Board : public ActorSprite {
     friend class Piece;
 
-    int selection[2];
     ~Board();
+
 public:
+    sf::RectangleShape line[2];
+    int selection[2];
     Board();
     void addSelection();
     void execute() override;
@@ -232,9 +324,12 @@ public:
 };
 
 Board::Board() : ActorSprite("./Assets/Sprites/Board.png"),
+line{sf::RectangleShape(sf::Vector2f(128.f, 128.f)), sf::RectangleShape(sf::Vector2f(128.f, 128.f))},
 selection{ 0, 0 } {
     sprite.setPosition(engine.window.getSize().x / 2 - sprite.getLocalBounds().width / 2,
         engine.window.getSize().y / 2 - sprite.getLocalBounds().height / 2);
+    line[0].setFillColor(sf::Color::Transparent);
+    line[1].setFillColor(sf::Color::Transparent);
 }
 
 Board::~Board() {}
@@ -242,16 +337,19 @@ Board::~Board() {}
 void Board::addSelection() {
     static int index = 0;
 
-    if (index > 1)
+    if (index > 1){
         index = 0;
+    }
 
-    for (int i = 1; i < 8; i++) {
+    for (int i = 1; i <= 8; i++) {
+        line[index].setPosition((i - 1) * 128 + sprite.getPosition().x, 0);
         if ((i) * 128 + engine.window.getSize().x / 2 - sprite.getLocalBounds().width / 2 > engine.getMousePosition().x)
             break;
         selection[index] = i * 100;
     }
 
-    for (int i = 1; i < 8; i++) {
+    for (int i = 1; i <= 8; i++) {
+        line[index].setPosition(line[index].getPosition().x, (i - 1) * 128 + sprite.getPosition().y);
         if ((i) * 128 + engine.window.getSize().y / 2 - sprite.getLocalBounds().height / 2 > engine.getMousePosition().y)
             break;
         selection[index]++;
@@ -263,9 +361,9 @@ void Board::addSelection() {
 }
 
 void Board::execute() {
-    static float timer = 0.1f;
+    static float timer = 0.3f;
 
-    if (timer > 0.1f && engine.event.type == sf::Event::MouseButtonPressed && sprite.getGlobalBounds().contains(engine.getMousePosition())) {
+    if (timer > 0.3f && engine.event.type == sf::Event::MouseButtonPressed && sprite.getGlobalBounds().contains(engine.getMousePosition())) {
         addSelection();
 
         timer = 0.f;
@@ -274,11 +372,13 @@ void Board::execute() {
         timer += engine.deltaTime;
 
     ActorSprite::draw();
+    Engine::instance().window.draw(line[0]);
+    Engine::instance().window.draw(line[1]);
 }
 
 bool Board::pass() {
-    return true;
-}
+    return false;
+}   
 
 class Piece : public ActorSprite {
     ~Piece();
@@ -357,76 +457,189 @@ bool Background::pass() {
     return false;
 }
 
-Actor* [] = {
-    new Background(),
-    new Board(),
-    new Cursor()
-};
-
 class Game {
     Engine& engine;
     std::vector<Actor*> actors;
+    sf::RectangleShape bar;
+    Board* board;
+    PlayButton* playButton;
+    sf::Music music;
 
     int kept;
     float timer;
     bool countdown;
-    sf::RectangleShape bar;
+    int level;
+    int correct[2];
 
 public:
     Game();
     ~Game();
     
-    void loadPieces(Board* b, int arr[64]);
-    void insertActors(Actor* a[]);
+    //void loadPieces(Board* b, int arr[64]);
+    void insertActor(Actor* a);
     void clearActors();
     void play();
 };
 
-Game::Game():
+Game::Game() :
     engine(Engine::instance()),
     kept(0),
-    timer(GAMELENGTH),
-    countdown(false),
-    bar(sf::Vector2f(1920, 24)) {
-    insertActors(arr);
+    timer(0),
+    countdown(true),
+    bar(sf::Vector2f(1920, 24)),
+    board(new Board),
+    playButton(new PlayButton),
+    level(-1),
+    correct() {
     bar.setFillColor(sf::Color::Red);
-    bar.setPosition(0, 1050);
+    bar.setPosition(0, 1056);
+    if (music.openFromFile("./Assets/Audio/the-final-game.wav"))
+        music.play();
 }
 
 Game::~Game() {
     actors.clear();
 }
 
-void Game::insertActors(Actor* a[]) {
-    int size = sizeof(a) / sizeof(a[0]);
-
-    for (int i = 0; i <= size; i++)
-        actors.insert(actors.end() - kept, a[i]);;
+void Game::insertActor(Actor* a) {
+    actors.push_back(a);
 }
 
 void Game::clearActors() {
-    kept = 0;
-
-    for (Actor* a : actors) {
-        if (a->pass()) {
-            actors.erase(actors.begin() + kept);
-            kept--;
-        }
-        kept++;
-        printf("%i", kept);
-    }
+    actors.clear();
 }
 
 void Game::play() {
     while (Engine::instance().window.isOpen()) {
         sf::Event& event = Engine::instance().next();
+        static float wait = 1.f;
 
-        if (timer <= 0) {
-            timer = GAMELENGTH;
-            clearActors();
+        if (board->selection[0] > 0) {
+            board->line[0].setFillColor(sf::Color::Yellow);
         }
 
-        kept = 0;
+        if (board->selection[1] > 0) {
+            board->line[1].setFillColor(sf::Color::Green);
+        }
+
+        if (board->selection[0] > 0 && board->selection[1] > 0){
+            if (board->selection[0] == correct[0] && board->selection[1] == correct[1]) {
+                score += (int)timer;
+                timer = 0;
+                wait += engine.deltaTime;
+            }
+        }
+
+        if (level == 0 && playButton->value == 1) {
+            timer = 0;
+        }
+
+        if (timer <= 0 && wait >= 1.f) {
+            board->line[0].setFillColor(sf::Color::Transparent);
+            board->line[1].setFillColor(sf::Color::Transparent);
+            clearActors();
+
+            level++;
+
+            if (level != 0) {
+                timer = GAMELENGTH;
+                wait = 0.f;
+
+                board->selection[0] = 0;
+                board->selection[1] = 0;
+            }
+
+            switch (level) {
+            case 0:
+                timer = INFINITY;
+                wait = 1.f;
+                Game::insertActor(new Background);
+                Game::insertActor(new Title);
+                Game::insertActor(playButton);
+                Game::insertActor(new Cursor);
+                break;
+            case 1:
+                correct[0] = 702; correct[1] = 701;
+                Game::insertActor(new Background);
+                Game::insertActor(board);
+                Game::insertActor(new Piece(*board, Piece::PIECE::BlackKing, 2, 1));
+                Game::insertActor(new Piece(*board, Piece::PIECE::WhiteRook, 7, 2));
+                Game::insertActor(new Piece(*board, Piece::PIECE::WhiteKing, 2, 3));
+                Game::insertActor(new Score);
+                Game::insertActor(new Cursor);
+                break;
+            case 2:
+                correct[0] = 604; correct[1] = 804;
+                Game::insertActor(new Background);
+                Game::insertActor(board);
+                Game::insertActor(new Piece(*board, Piece::PIECE::WhiteBishop, 6, 2));
+                Game::insertActor(new Piece(*board, Piece::PIECE::BlackRook, 3, 3));
+                Game::insertActor(new Piece(*board, Piece::PIECE::WhiteRook, 6, 4));
+                Game::insertActor(new Piece(*board, Piece::PIECE::BlackPawn, 8, 4));
+                Game::insertActor(new Piece(*board, Piece::PIECE::BlackPawn, 7, 5));
+                Game::insertActor(new Piece(*board, Piece::PIECE::BlackKing, 8, 5));
+                Game::insertActor(new Piece(*board, Piece::PIECE::WhiteKing, 7, 7));
+                Game::insertActor(new Score);
+                Game::insertActor(new Cursor);
+                break;
+            case 3:
+                correct[0] = 605; correct[1] = 403;
+                Game::insertActor(new Background);
+                Game::insertActor(board);
+                Game::insertActor(new Piece(*board, Piece::PIECE::BlackBishop, 5, 1));
+                Game::insertActor(new Piece(*board, Piece::PIECE::BlackKing, 6, 1));
+                Game::insertActor(new Piece(*board, Piece::PIECE::BlackPawn, 1, 2));
+                Game::insertActor(new Piece(*board, Piece::PIECE::BlackPawn, 2, 2));
+                Game::insertActor(new Piece(*board, Piece::PIECE::BlackPawn, 3, 2));
+                Game::insertActor(new Piece(*board, Piece::PIECE::BlackPawn, 7, 2));
+                Game::insertActor(new Piece(*board, Piece::PIECE::BlackKnight, 3, 3));
+                Game::insertActor(new Piece(*board, Piece::PIECE::BlackPawn, 4, 3));
+                Game::insertActor(new Piece(*board, Piece::PIECE::BlackPawn, 8, 3));
+                Game::insertActor(new Piece(*board, Piece::PIECE::BlackBishop, 3, 4));
+                Game::insertActor(new Piece(*board, Piece::PIECE::WhiteBishop, 3, 5));
+                Game::insertActor(new Piece(*board, Piece::PIECE::WhiteBishop, 6, 5));
+                Game::insertActor(new Piece(*board, Piece::PIECE::BlackKnight, 7, 5));
+                Game::insertActor(new Piece(*board, Piece::PIECE::BlackQueen, 8, 5));
+                Game::insertActor(new Piece(*board, Piece::PIECE::WhiteKnight, 6, 3));
+                Game::insertActor(new Piece(*board, Piece::PIECE::WhitePawn, 1, 7));
+                Game::insertActor(new Piece(*board, Piece::PIECE::WhitePawn, 2, 7));
+                Game::insertActor(new Piece(*board, Piece::PIECE::WhitePawn, 7, 7));
+                Game::insertActor(new Piece(*board, Piece::PIECE::WhitePawn, 8, 7));
+                Game::insertActor(new Piece(*board, Piece::PIECE::WhiteRook, 5, 8));
+                Game::insertActor(new Piece(*board, Piece::PIECE::WhiteRook, 6, 8));
+                Game::insertActor(new Piece(*board, Piece::PIECE::WhiteKing, 8, 8));
+                Game::insertActor(new Score);
+                Game::insertActor(new Cursor);
+                break;
+            case 4:
+                correct[0] = 204; correct[1] = 203;
+                Game::insertActor(new Background);
+                Game::insertActor(board);
+                Game::insertActor(new Piece(*board, Piece::PIECE::BlackKing, 3, 1));
+                Game::insertActor(new Piece(*board, Piece::PIECE::WhitePawn, 3, 2));
+                Game::insertActor(new Piece(*board, Piece::PIECE::BlackPawn, 1, 3));
+                Game::insertActor(new Piece(*board, Piece::PIECE::WhiteKing, 3, 3));
+                Game::insertActor(new Piece(*board, Piece::PIECE::WhitePawn, 2, 4));
+                Game::insertActor(new Score);
+                Game::insertActor(new Cursor);
+                break;
+            case 5:
+                correct[0] = 203; correct[1] = 202;
+                Game::insertActor(new Background);
+                Game::insertActor(board);
+                Game::insertActor(new Piece(*board, Piece::PIECE::BlackKing, 3, 1));
+                Game::insertActor(new Piece(*board, Piece::PIECE::WhitePawn, 3, 2));
+                Game::insertActor(new Piece(*board, Piece::PIECE::BlackPawn, 1, 4));
+                Game::insertActor(new Piece(*board, Piece::PIECE::WhiteKing, 3, 3));
+                Game::insertActor(new Piece(*board, Piece::PIECE::WhitePawn, 2, 3));
+                Game::insertActor(new Score);
+                Game::insertActor(new Cursor);
+                break;
+            default:
+            Engine::instance().window.close();
+                break;
+            }
+        }
 
         switch (event.type)
         {
@@ -458,6 +671,45 @@ int main()
 
 /*
 
+void Game::insertActor(Actor* a) {
+    actors.insert(actors.end() - kept, a);
+}
+
+void Game::clearActors() {
+    int i = -1;
+    kept = 0;
+
+    for (Actor* a : actors) {
+        i++;
+        if (!a->pass()) {
+            kept++;
+            continue;
+        }
+
+        actors.erase(actors.begin() + i);
+    }
+
+    printf("%d\n", kept);
+}{
+        {605, 403},
+        {605, 502},
+        {805, 804}
+    } 
+
+Board* board = new Board();
+
+Actor* Level[5][5] = {
+{
+    new Background(),
+    board,
+    new Cursor()
+},
+{
+    new Piece(*board, Piece::PIECE::BlackBishop, 1, 1),
+    new Piece(*board, Piece::PIECE::WhiteKing, 2, 1)
+}
+};
+
 int arr[64] = {
      10, 8,  9, 11, 12,  9,  8, 10,
      7,  7,  7,  7,  7,  7,  7,  7,
@@ -468,6 +720,12 @@ int arr[64] = {
      1,  1,  1,  1,  1,  1,  1,  1,
      4,  2,  3,  5,  6,  3,  2,  4
 };
+
+void Game::insertActors(Actor* a[][5]) {
+    for (int i = 0; i <= 5; i++)
+        if(a[level][i] != nullptr)
+            actors.insert(actors.end() - kept, a[level][i]);
+}
 
 
 void Game::loadPieces(Board* b, int arr[64]) {
